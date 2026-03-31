@@ -1,3 +1,4 @@
+```text
 src/
 ├── app/                        # 1. Configurações globais e inicialização
 │   ├── providers/
@@ -54,6 +55,7 @@ src/
     └── hooks/
         ├── use-mobile.tsx      
         └── use-toast.ts        
+```
 
 # Regras do FSD neste projeto:
 1. Uma camada só pode importar recursos das camadas **abaixo** dela.
