@@ -39,7 +39,8 @@ export default function Onboarding() {
       preferredSplit: split,
       onboardingComplete: true,
     });
-    navigate('/');
+
+    navigate('/dashboard', { replace: true });
   };
 
   const canNext = step === 0 || step === 1 || step >= 2;
