@@ -22,7 +22,7 @@ export function DesktopSidebar() {
     <aside className="hidden md:flex flex-col w-64 h-screen fixed left-0 top-0 bg-card border-r border-border p-4 gap-2">
       <div className="flex items-center gap-2 px-3 py-4 mb-4">
         <Zap className="h-7 w-7 text-primary" />
-        <h1 className="text-xl font-display font-bold tracking-tight">PROGRESSÃO</h1>
+        <h1 className="text-xl font-display font-bold tracking-tight">evoluX</h1>
       </div>
 
       <nav className="flex flex-col gap-1 flex-1">

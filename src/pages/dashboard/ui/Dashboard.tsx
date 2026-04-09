@@ -52,7 +52,7 @@ export default function Dashboard() {
           <div className="flex items-center gap-2 mb-1">
             <Zap className="h-5 w-5 text-primary md:hidden" />
             <span className="text-sm text-muted-foreground md:hidden font-display font-bold tracking-tight">
-              PROGRESSÃO
+              evoluX
             </span>
           </div>
           <h1 className="text-2xl font-display font-bold">Olá, {user.name}! 💪</h1>

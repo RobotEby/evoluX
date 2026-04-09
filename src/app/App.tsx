@@ -9,8 +9,11 @@ import { AppLayout } from '@/widgets/layout/ui/AppLayout';
 import Dashboard from '@/pages/dashboard/ui/Dashboard';
 import Biblioteca from '@/pages/biblioteca/ui/Biblioteca';
 import NotFound from '@/pages/not-found/ui/NotFound';
-import { JSX } from 'react/jsx-runtime';
 import { getUser } from '@/shared/lib/storage';
+import Fichas from '@/pages/fichas/ui/Fichas';
+import FichaDetail from '@/pages/fichas/ui/FichaDetail';
+import Treino from '@/pages/treino/ui/Treino';
+import EmTreino from '@/pages/treino/ui/EmTreino';
 
 function hasCompletedOnboarding() {
   return getUser()?.onboardingComplete === true;
@@ -36,10 +39,14 @@ const App = () => (
           <Routes>
             <Route path="/" element={<RootRedirect />} />
             <Route path="/onboarding" element={<Onboarding />} />
+            <Route path="/em-treino/:planId/:dayId" element={<EmTreino />} />
 
             <Route element={<RequireOnboarding />}>
               <Route element={<AppLayout />}>
                 <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/fichas" element={<Fichas />} />
+                <Route path="/fichas/:id" element={<FichaDetail />} />
+                <Route path="/treino" element={<Treino />} />
                 <Route path="/biblioteca" element={<Biblioteca />} />
               </Route>
             </Route>
