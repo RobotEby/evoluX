@@ -1,3 +1,5 @@
+depois vai no App.tsx e cola isso 
+
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { Toaster as Sonner } from '../shared/ui/ui/sonner';
@@ -14,6 +16,7 @@ import Fichas from '@/pages/fichas/ui/Fichas';
 import FichaDetail from '@/pages/fichas/ui/FichaDetail';
 import Treino from '@/pages/treino/ui/Treino';
 import EmTreino from '@/pages/treino/ui/EmTreino';
+import Progresso from '@/pages/progresso/ui/Progresso';
 
 function hasCompletedOnboarding() {
   return getUser()?.onboardingComplete === true;
@@ -47,6 +50,7 @@ const App = () => (
                 <Route path="/fichas" element={<Fichas />} />
                 <Route path="/fichas/:id" element={<FichaDetail />} />
                 <Route path="/treino" element={<Treino />} />
+                <Route path="/progresso" element={<Progresso />} />
                 <Route path="/biblioteca" element={<Biblioteca />} />
               </Route>
             </Route>
