@@ -1,5 +1,3 @@
-depois vai no App.tsx e cola isso 
-
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Navigate, Outlet, Route, Routes } from 'react-router-dom';
 import { Toaster as Sonner } from '../shared/ui/ui/sonner';
