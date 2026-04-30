@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Plus, ChevronRight, Trash2 } from 'lucide-react';
+import { Plus, ChevronRight, Trash2, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/ui/card';
 import { Button } from '@/shared/ui/ui/button';
 import { Badge } from '@/shared/ui/ui/badge';
@@ -14,45 +14,69 @@ import {
   SelectValue,
 } from '@/shared/ui/ui/select';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/shared/ui/ui/sheet';
-import { getPlans, savePlans, deletePlan } from '@/shared/lib/storage';
+import { routineService } from '@/entities/workout/api';
+import { mapRoutineToPlan } from '@/entities/workout/api';
 import type { WorkoutPlan, DivisionType } from '@/entities/workout/model/workout';
 import { DIVISION_LABELS } from '@/entities/workout/model/workout';
 
 export default function Fichas() {
   const navigate = useNavigate();
   const [plans, setPlans] = useState<WorkoutPlan[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showNew, setShowNew] = useState(false);
   const [newName, setNewName] = useState('');
   const [newDivision, setNewDivision] = useState<DivisionType>('ppl');
   const [newDays, setNewDays] = useState(4);
+  const [creating, setCreating] = useState(false);
 
   useEffect(() => {
-    setPlans(getPlans());
+    routineService
+      .list()
+      .then((routines) => routines.map(mapRoutineToPlan))
+      .then(setPlans)
+      .catch(() => setPlans([]))
+      .finally(() => setLoading(false));
   }, []);
 
-  const createPlan = () => {
+  const createPlan = async () => {
     if (!newName.trim()) return;
-    const plan: WorkoutPlan = {
-      id: `plan-${Date.now()}`,
-      name: newName,
-      divisionType: newDivision,
-      daysPerWeek: newDays,
-      days: [],
-      createdAt: new Date().toISOString().split('T')[0],
-      updatedAt: new Date().toISOString().split('T')[0],
-    };
-    const updated = [...plans, plan];
-    savePlans(updated);
-    setPlans(updated);
-    setShowNew(false);
-    setNewName('');
-    navigate(`/fichas/${plan.id}`);
+    setCreating(true);
+    try {
+      await routineService.create({ name: newName, goal: 'hipertrofia' });
+      // Recarrega a lista
+      const routines = await routineService.list();
+      setPlans(routines.map(mapRoutineToPlan));
+      setShowNew(false);
+      setNewName('');
+
+      // Navega para a nova rotina (última da lista)
+      const last = routines[routines.length - 1];
+      if (last) {
+        navigate(`/fichas/${last.id}`);
+      }
+    } catch {
+      // fallback silencioso
+    } finally {
+      setCreating(false);
+    }
   };
 
-  const handleDelete = (id: string) => {
-    deletePlan(id);
-    setPlans(getPlans());
+  const handleDelete = async (id: string) => {
+    try {
+      await routineService.remove(id);
+      setPlans((prev) => prev.filter((p) => p.id !== id));
+    } catch {
+      // fallback
+    }
   };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center min-h-[60vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-6">
@@ -110,7 +134,16 @@ export default function Fichas() {
                   </SelectContent>
                 </Select>
               </div>
-              <Button className="w-full touch-target" onClick={createPlan}>
+              <Button
+                className="w-full touch-target"
+                onClick={createPlan}
+                disabled={creating || !newName.trim()}
+              >
+                {creating ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : (
+                  <Plus className="h-4 w-4 mr-2" />
+                )}
                 Criar Ficha
               </Button>
             </div>

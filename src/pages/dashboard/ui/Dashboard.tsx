@@ -1,10 +1,19 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Flame, Trophy, TrendingUp, Play, Zap, Dumbbell } from 'lucide-react';
+import { Flame, Trophy, TrendingUp, Play, Zap, Dumbbell, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/ui/card';
 import { Button } from '@/shared/ui/ui/button';
 import { ThemeToggle } from '@/features/theme-toggle/ui/ThemeToggle';
-import { getUser, getPlans, getSessions, getPRs, getStreak } from '@/shared/lib/storage';
+import {
+  routineService,
+  sessionService,
+  recordService,
+  userService,
+  mapRoutineToPlan,
+  mapRecordToPR,
+  mapProfileToPreferences,
+  calculateStreak,
+} from '@/entities/workout/api';
 import type {
   UserPreferences,
   WorkoutPlan,
@@ -18,27 +27,50 @@ export default function Dashboard() {
   const [prs, setPrs] = useState<PersonalRecord[]>([]);
   const [streak, setStreak] = useState(0);
   const [weeklyVolume, setWeeklyVolume] = useState(0);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const u = getUser();
-    if (!u.onboardingComplete) {
-      navigate('/onboarding');
-      return;
-    }
-    setUser(u);
-    setPlans(getPlans());
-    setPrs(getPRs());
-    setStreak(getStreak());
+    Promise.all([
+      userService.getProfile().then(mapProfileToPreferences),
+      routineService.list().then((routines) => routines.map(mapRoutineToPlan)),
+      recordService.list().then((records) => records.map(mapRecordToPR)),
+      sessionService.list(0, 100),
+    ])
+      .then(([profile, plansData, prsData, sessions]) => {
+        setUser(profile);
+        setPlans(plansData);
+        setPrs(prsData);
 
-    const sessions = getSessions();
-    const now = new Date();
-    const weekAgo = new Date(now);
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    const weekVol = sessions
-      .filter((s) => new Date(s.date) >= weekAgo && s.completed)
-      .reduce((sum, s) => sum + s.totalVolume, 0);
-    setWeeklyVolume(weekVol);
-  }, [navigate]);
+        // Streak a partir das datas das sessões concluídas
+        const completedDates = sessions
+          .filter((s) => s.status === 'COMPLETED')
+          .map((s) => s.startedAt?.split('T')[0] ?? '');
+        setStreak(calculateStreak(completedDates));
+
+        // Volume semanal
+        const now = new Date();
+        const weekAgo = new Date(now);
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        const weekVol = sessions
+          .filter((s) => s.status === 'COMPLETED' && new Date(s.startedAt || '') >= weekAgo)
+          .reduce((sum, s) => sum + (s.totalVolumeKg || 0), 0);
+        setWeeklyVolume(weekVol);
+      })
+      .catch(() => {
+        setUser(null);
+        setPlans([]);
+        setPrs([]);
+      })
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center min-h-[60vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (!user) return null;
 

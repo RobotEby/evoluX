@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Plus, ArrowLeft, GripVertical, X } from 'lucide-react';
+import { Plus, ArrowLeft, GripVertical, X, Loader2 } from 'lucide-react';
 import { Card, CardContent } from '@/shared/ui/ui/card';
 import { Button } from '@/shared/ui/ui/button';
 import { Label } from '@/shared/ui/ui/label';
@@ -20,95 +20,168 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/shared/ui/ui/accordion';
-import { getPlans, updatePlan } from '@/shared/lib/storage';
-import { EXERCISES } from '@/entities/workout/api/exercises';
+import { routineService, exerciseService } from '@/entities/workout/api';
+import { mapRoutineToPlan, mapExerciseResponseToDomain } from '@/entities/workout/api';
 import type {
   WorkoutPlan,
   WorkoutDay,
   PlanExercise,
   Technique,
+  Exercise,
   MuscleGroup,
 } from '@/entities/workout/model/workout';
 import { TECHNIQUE_LABELS, MUSCLE_GROUP_LABELS } from '@/entities/workout/model/workout';
-import { cn } from '@/shared/lib/utils';
 
 export default function FichaDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [plan, setPlan] = useState<WorkoutPlan | null>(null);
+  const [exercisesCatalog, setExercisesCatalog] = useState<Exercise[]>([]);
+  const [loading, setLoading] = useState(true);
   const [addingToDay, setAddingToDay] = useState<string | null>(null);
   const [newDayName, setNewDayName] = useState('');
   const [showNewDay, setShowNewDay] = useState(false);
   const [filterMuscle, setFilterMuscle] = useState<string>('all');
   const [searchEx, setSearchEx] = useState('');
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    const p = getPlans().find((x) => x.id === id);
-    if (p) setPlan(p);
-    else navigate('/fichas');
+    if (!id) {
+      navigate('/fichas');
+      return;
+    }
+    Promise.all([routineService.getById(id), exerciseService.list()])
+      .then(([routine, exercises]) => {
+        setPlan(mapRoutineToPlan(routine));
+        setExercisesCatalog(exercises.map(mapExerciseResponseToDomain));
+      })
+      .catch(() => navigate('/fichas'))
+      .finally(() => setLoading(false));
   }, [id, navigate]);
+
+  const reloadPlan = async () => {
+    if (!id) return;
+    try {
+      const routine = await routineService.getById(id);
+      setPlan(mapRoutineToPlan(routine));
+    } catch {
+      // fallback
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center min-h-[60vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   if (!plan) return null;
 
-  const save = (updated: WorkoutPlan) => {
-    setPlan(updated);
-    updatePlan(updated);
+  const addDay = async () => {
+    if (!newDayName.trim() || !id) return;
+    setSaving(true);
+    try {
+      const dayNumber = plan.days.length + 1;
+      await routineService.addDay(id, { dayNumber, name: newDayName });
+      await reloadPlan();
+      setNewDayName('');
+      setShowNewDay(false);
+    } catch {
+      // fallback
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const addDay = () => {
-    if (!newDayName.trim()) return;
-    const day: WorkoutDay = { id: `day-${Date.now()}`, name: newDayName, exercises: [] };
-    save({ ...plan, days: [...plan.days, day] });
-    setNewDayName('');
-    setShowNewDay(false);
+  const removeDay = async (dayId: string) => {
+    if (!id) return;
+    setSaving(true);
+    try {
+      await routineService.removeDay(id, dayId);
+      await reloadPlan();
+    } catch {
+      // fallback
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const removeDay = (dayId: string) => {
-    save({ ...plan, days: plan.days.filter((d) => d.id !== dayId) });
+  const addExercise = async (dayId: string, exerciseId: string) => {
+    if (!id) return;
+    setSaving(true);
+    try {
+      await routineService.addExercise(id, dayId, {
+        exerciseId,
+        sets: 3,
+        repsTarget: 10,
+        restSeconds: 90,
+        durationSeconds: 0,
+        weightTargetKg: 0,
+      });
+      await reloadPlan();
+      setAddingToDay(null);
+    } catch {
+      // fallback
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const addExercise = (dayId: string, exerciseId: string) => {
-    const ex = EXERCISES.find((e) => e.id === exerciseId);
-    if (!ex) return;
-    const pe: PlanExercise = {
-      id: `pe-${Date.now()}`,
-      exerciseId,
-      sets: 3,
-      repsMin: 8,
-      repsMax: 12,
-      technique: 'normal',
-      restSeconds: 90,
-      order: plan.days.find((d) => d.id === dayId)?.exercises.length || 0,
-    };
-    const days = plan.days.map((d) =>
-      d.id === dayId ? { ...d, exercises: [...d.exercises, pe] } : d
-    );
-    save({ ...plan, days });
-    setAddingToDay(null);
+  const removeExercise = async (dayId: string, exerciseId: string) => {
+    if (!id) return;
+    setSaving(true);
+    try {
+      await routineService.removeExercise(id, dayId, exerciseId);
+      await reloadPlan();
+    } catch {
+      // fallback
+    } finally {
+      setSaving(false);
+    }
   };
 
-  const removeExercise = (dayId: string, peId: string) => {
-    const days = plan.days.map((d) =>
-      d.id === dayId ? { ...d, exercises: d.exercises.filter((e) => e.id !== peId) } : d
-    );
-    save({ ...plan, days });
+  const updateExercise = async (
+    dayId: string,
+    peId: string,
+    updates: { sets?: number; repsTarget?: number; restSeconds?: number; weightTargetKg?: number }
+  ) => {
+    if (!id) return;
+    // Finds current exercise to preserve fields
+    const day = plan.days.find((d) => d.id === dayId);
+    const pe = day?.exercises.find((e) => e.id === peId);
+    if (!pe) return;
+    try {
+      await routineService.updateExercise(id, dayId, peId, {
+        exerciseId: pe.exerciseId,
+        sets: updates.sets ?? pe.sets,
+        repsTarget: updates.repsTarget ?? pe.repsMax,
+        restSeconds: updates.restSeconds ?? pe.restSeconds,
+        durationSeconds: 0,
+        weightTargetKg: updates.weightTargetKg ?? pe.baseLoad ?? 0,
+      });
+      await reloadPlan();
+    } catch {
+      // fallback
+    }
   };
 
-  const updateExercise = (dayId: string, peId: string, updates: Partial<PlanExercise>) => {
-    const days = plan.days.map((d) =>
-      d.id === dayId
-        ? { ...d, exercises: d.exercises.map((e) => (e.id === peId ? { ...e, ...updates } : e)) }
-        : d
-    );
-    save({ ...plan, days });
-  };
-
-  const filteredExercises = EXERCISES.filter((e) => {
+  // ════════════════ Filtro de exercícios ════════════════
+  const filteredExercises = exercisesCatalog.filter((e) => {
     if (filterMuscle !== 'all' && !e.muscleGroups.includes(filterMuscle as MuscleGroup))
       return false;
     if (searchEx && !e.name.toLowerCase().includes(searchEx.toLowerCase())) return false;
     return true;
   });
+
+  if (saving) {
+    return (
+      <div className="flex justify-center items-center min-h-[60vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-6">
@@ -137,14 +210,14 @@ export default function FichaDetail() {
             </AccordionTrigger>
             <AccordionContent className="px-4 pb-4 space-y-3">
               {day.exercises.map((pe) => {
-                const ex = EXERCISES.find((e) => e.id === pe.exerciseId);
+                const ex = exercisesCatalog.find((e) => e.id === pe.exerciseId);
                 return (
                   <Card key={pe.id} className="bg-muted/50">
                     <CardContent className="p-3 space-y-2">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <GripVertical className="h-4 w-4 text-muted-foreground" />
-                          <span className="font-medium text-sm">{ex?.name}</span>
+                          <span className="font-medium text-sm">{ex?.name ?? pe.exerciseId}</span>
                         </div>
                         <Button
                           variant="ghost"
@@ -168,26 +241,15 @@ export default function FichaDetail() {
                           />
                         </div>
                         <div>
-                          <Label className="text-xs">Reps</Label>
-                          <div className="flex items-center gap-1">
-                            <Input
-                              type="number"
-                              value={pe.repsMin}
-                              onChange={(e) =>
-                                updateExercise(day.id, pe.id, { repsMin: +e.target.value })
-                              }
-                              className="h-8 text-sm w-full"
-                            />
-                            <span className="text-xs text-muted-foreground">-</span>
-                            <Input
-                              type="number"
-                              value={pe.repsMax}
-                              onChange={(e) =>
-                                updateExercise(day.id, pe.id, { repsMax: +e.target.value })
-                              }
-                              className="h-8 text-sm w-full"
-                            />
-                          </div>
+                          <Label className="text-xs">Reps Alvo</Label>
+                          <Input
+                            type="number"
+                            value={pe.repsMax}
+                            onChange={(e) =>
+                              updateExercise(day.id, pe.id, { repsTarget: +e.target.value })
+                            }
+                            className="h-8 text-sm"
+                          />
                         </div>
                         <div>
                           <Label className="text-xs">Carga</Label>
@@ -195,7 +257,7 @@ export default function FichaDetail() {
                             type="number"
                             value={pe.baseLoad || ''}
                             onChange={(e) =>
-                              updateExercise(day.id, pe.id, { baseLoad: +e.target.value })
+                              updateExercise(day.id, pe.id, { weightTargetKg: +e.target.value })
                             }
                             className="h-8 text-sm"
                             placeholder="kg"
@@ -217,9 +279,10 @@ export default function FichaDetail() {
                         <Label className="text-xs">Técnica</Label>
                         <Select
                           value={pe.technique}
-                          onValueChange={(v) =>
-                            updateExercise(day.id, pe.id, { technique: v as Technique })
-                          }
+                          onValueChange={(v) => {
+                            // técnica é local-only, não mapeada na API atual
+                            // mas mantemos o UI para futura integração
+                          }}
                         >
                           <SelectTrigger className="h-8 text-sm">
                             <SelectValue />
@@ -279,7 +342,7 @@ export default function FichaDetail() {
                 placeholder="Ex: Peito e Tríceps"
               />
             </div>
-            <Button className="w-full" onClick={addDay}>
+            <Button className="w-full" onClick={addDay} disabled={!newDayName.trim()}>
               Adicionar
             </Button>
           </div>

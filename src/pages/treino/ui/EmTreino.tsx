@@ -11,6 +11,7 @@ import {
   Trophy,
   MessageSquare,
   X,
+  Loader2,
 } from 'lucide-react';
 import { Button } from '@/shared/ui/ui/button';
 import { Card, CardContent } from '@/shared/ui/ui/card';
@@ -18,7 +19,8 @@ import { Input } from '@/shared/ui/ui/input';
 import { Badge } from '@/shared/ui/ui/badge';
 import { Progress } from '@/shared/ui/ui/progress';
 import { cn } from '@/shared/lib/utils';
-import { getPlans, addSession, addPR, getSessions } from '@/shared/lib/storage';
+import { routineService, sessionService, recordService } from '@/entities/workout/api';
+import { mapRoutineToPlan } from '@/entities/workout/api';
 import { EXERCISES } from '@/entities/workout/api/exercises';
 import type {
   WorkoutPlan,
@@ -49,6 +51,7 @@ export default function EmTreino() {
 
   const [plan, setPlan] = useState<WorkoutPlan | null>(null);
   const [day, setDay] = useState<WorkoutDay | null>(null);
+  const [loading, setLoading] = useState(true);
   const [currentExIndex, setCurrentExIndex] = useState(0);
   const [currentSetIndex, setCurrentSetIndex] = useState(0);
   const [weight, setWeight] = useState(0);
@@ -64,43 +67,43 @@ export default function EmTreino() {
   const [drops, setDrops] = useState<{ weight: number; reps: number }[]>([]);
   const [showSummary, setShowSummary] = useState(false);
   const [startTime] = useState(Date.now());
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => {
-    timerRef.current = setInterval(() => {
-      console.log('Executando...');
-    }, 1000);
-
-    return () => {
-      if (timerRef.current) {
-        clearInterval(timerRef.current);
-      }
-    };
-  }, []);
-
   // Muscle Rounds state
-  const [muscleRoundSet, setMuscleRoundSet] = useState(0); // 0-5 (which mini-set)
+  const [muscleRoundSet, setMuscleRoundSet] = useState(0);
   const [isMuscleRoundRest, setIsMuscleRoundRest] = useState(false);
   const [muscleRoundClusters, setMuscleRoundClusters] = useState<number[]>([]);
 
+  // Load plan + start session
   useEffect(() => {
-    const plans = getPlans();
-    const p = plans.find((x) => x.id === planId);
-    if (!p) {
+    if (!planId || !dayId) {
       navigate('/treino');
       return;
     }
-    const d = p.days.find((x) => x.id === dayId);
-    if (!d) {
-      navigate('/treino');
-      return;
-    }
-    setPlan(p);
-    setDay(d);
-    if (d.exercises.length > 0) {
-      setWeight(d.exercises[0].baseLoad || 0);
-      setReps(d.exercises[0].technique === 'muscle-rounds' ? 6 : d.exercises[0].repsMin);
-    }
+    routineService
+      .getById(planId)
+      .then((routine) => {
+        const p = mapRoutineToPlan(routine);
+        const d = p.days.find((x) => x.id === dayId);
+        if (!d) {
+          navigate('/treino');
+          return;
+        }
+        setPlan(p);
+        setDay(d);
+        if (d.exercises.length > 0) {
+          setWeight(d.exercises[0].baseLoad || 0);
+          setReps(d.exercises[0].technique === 'muscle-rounds' ? 6 : d.exercises[0].repsMin);
+        }
+        // Start session on API
+        return sessionService
+          .start({ routineId: planId, routineDayId: dayId })
+          .then((s) => setSessionId(s.id));
+      })
+      .catch(() => navigate('/treino'))
+      .finally(() => setLoading(false));
   }, [planId, dayId, navigate]);
 
   const currentPE = day?.exercises[currentExIndex];
@@ -141,53 +144,71 @@ export default function EmTreino() {
 
   const calculate1RM = (w: number, r: number) => Math.round(w * (1 + r / 30));
 
-  // Muscle Rounds: log one mini-set, start 10s timer, advance
+  // ══════════ API: send set to backend ══════════
+  const sendSetToApi = async (exerciseId: string, repsDone: number, weightKg: number) => {
+    if (!sessionId) return;
+    try {
+      await sessionService.addSet(sessionId, {
+        exerciseId,
+        setNumber: currentSetIndex + 1,
+        repsDone,
+        weightKg,
+        durationSeconds: 0,
+        isCompleted: true,
+        isWarmup: false,
+      });
+    } catch {
+      // non-blocking
+    }
+  };
+
+  // ══════════ API: create PR ══════════
+  const createPRApi = async (exerciseId: string, est1RM: number) => {
+    try {
+      await recordService.create({
+        exerciseId,
+        prType: 'ONE_RM',
+        value: est1RM,
+        unit: 'kg',
+        sessionId: sessionId || undefined,
+      });
+    } catch {
+      // non-blocking
+    }
+  };
+
+  // ══════════ Muscle Rounds: log one mini-set ══════════
   const logMuscleRoundMiniSet = () => {
     if (!currentPE || !currentEx) return;
     const newClusters = [...muscleRoundClusters, 6];
     setMuscleRoundClusters(newClusters);
 
     if (muscleRoundSet < 5) {
-      // Start 10s rest
       setMuscleRoundSet((s) => s + 1);
       setRestTotal(10);
       setRestTime(10);
       setIsMuscleRoundRest(true);
     } else {
       // All 6 done — log as single set
+      const totalReps = 36; // 6 × 6
       const setLog: SetLog = {
         setNumber: currentSetIndex + 1,
-        reps: 36, // 6x6
+        reps: totalReps,
         weight,
         technique: 'muscle-rounds',
         clusters: newClusters,
       };
 
       // Check PR
-      const est1RM = calculate1RM(weight, 36);
-      const sessions = getSessions();
-      const previousBest = sessions
-        .flatMap((s) => s.exercises)
-        .filter((e) => e.exerciseId === currentPE.exerciseId)
-        .flatMap((e) => e.sets)
-        .reduce((best, s) => {
-          const e = calculate1RM(s.weight, s.reps);
-          return e > best ? e : best;
-        }, 0);
-
-      if (est1RM > previousBest && weight > 0) {
+      const est1RM = calculate1RM(weight, totalReps);
+      if (est1RM > 0) {
         setLog.isPersonalRecord = true;
-        addPR({
-          exerciseId: currentPE.exerciseId,
-          exerciseName: currentEx.name,
-          weight,
-          reps: 36,
-          estimated1RM: est1RM,
-          date: new Date().toISOString().split('T')[0],
-        });
+        createPRApi(currentPE.exerciseId, est1RM);
         setShowPR(true);
         setTimeout(() => setShowPR(false), 2500);
       }
+
+      sendSetToApi(currentPE.exerciseId, totalReps, weight);
 
       setExerciseLogs((prev) => {
         const existing = prev.find((e) => e.exerciseId === currentPE.exerciseId);
@@ -207,7 +228,6 @@ export default function EmTreino() {
         ];
       });
 
-      // Reset muscle round state and move to next exercise
       setMuscleRoundSet(0);
       setMuscleRoundClusters([]);
       if (note) {
@@ -220,10 +240,10 @@ export default function EmTreino() {
     }
   };
 
+  // ══════════ Log Set ══════════
   const logSet = () => {
     if (!currentPE || !currentEx) return;
 
-    // Muscle Rounds uses its own flow
     if (isMuscleRounds) {
       logMuscleRoundMiniSet();
       return;
@@ -246,29 +266,14 @@ export default function EmTreino() {
     }
 
     const est1RM = calculate1RM(weight, setLog.reps);
-    const sessions = getSessions();
-    const previousBest = sessions
-      .flatMap((s) => s.exercises)
-      .filter((e) => e.exerciseId === currentPE.exerciseId)
-      .flatMap((e) => e.sets)
-      .reduce((best, s) => {
-        const e = calculate1RM(s.weight, s.reps);
-        return e > best ? e : best;
-      }, 0);
-
-    if (est1RM > previousBest && weight > 0) {
+    if (est1RM > 0 && weight > 0) {
       setLog.isPersonalRecord = true;
-      addPR({
-        exerciseId: currentPE.exerciseId,
-        exerciseName: currentEx.name,
-        weight,
-        reps: setLog.reps,
-        estimated1RM: est1RM,
-        date: new Date().toISOString().split('T')[0],
-      });
+      createPRApi(currentPE.exerciseId, est1RM);
       setShowPR(true);
       setTimeout(() => setShowPR(false), 2500);
     }
+
+    sendSetToApi(currentPE.exerciseId, setLog.reps, weight);
 
     setExerciseLogs((prev) => {
       const existing = prev.find((e) => e.exerciseId === currentPE.exerciseId);
@@ -353,27 +358,23 @@ export default function EmTreino() {
   };
 
   const finishWorkout = () => {
-    const totalVolume = exerciseLogs.reduce(
-      (sum, ex) => sum + ex.sets.reduce((s, set) => s + set.weight * set.reps, 0),
-      0
-    );
-
-    const session: WorkoutSession = {
-      id: `sess-${Date.now()}`,
-      planId: planId!,
-      dayId: dayId!,
-      dayName: day!.name,
-      date: new Date().toISOString().split('T')[0],
-      duration: Math.round((Date.now() - startTime) / 60000),
-      exercises: exerciseLogs,
-      totalVolume,
-      completed: true,
-    };
-
-    addSession(session);
+    // Complete session on API
+    if (sessionId) {
+      sessionService.complete(sessionId).catch(() => {});
+    }
     setShowSummary(true);
   };
 
+  // ════════════════ LOADING ════════════════
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <Loader2 className="h-10 w-10 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  // ════════════════ SUMMARY ════════════════
   if (showSummary) {
     const totalVolume = exerciseLogs.reduce(
       (sum, ex) => sum + ex.sets.reduce((s, set) => s + set.weight * set.reps, 0),
@@ -381,32 +382,7 @@ export default function EmTreino() {
     );
     const duration = Math.round((Date.now() - startTime) / 60000);
     const totalSets = exerciseLogs.reduce((sum, ex) => sum + ex.sets.length, 0);
-    const prs = exerciseLogs.flatMap((e) => e.sets).filter((s) => s.isPersonalRecord).length;
-
-    // Find previous session for same day
-    const allSessions = getSessions();
-    const previousSession = allSessions
-      .filter((s) => s.planId === planId && s.dayId === dayId && s.completed)
-      .sort((a, b) => b.date.localeCompare(a.date))
-      .find((s) => s.id !== `sess-${startTime}`); // exclude current
-
-    const prevVolume = previousSession?.totalVolume || 0;
-    const volumeDelta = prevVolume > 0 ? totalVolume - prevVolume : null;
-    const volumeDeltaPct = prevVolume > 0 ? ((totalVolume - prevVolume) / prevVolume) * 100 : null;
-
-    // Per-exercise comparison
-    const exerciseDeltas = exerciseLogs.map((ex) => {
-      const prevEx = previousSession?.exercises.find((pe) => pe.exerciseId === ex.exerciseId);
-      const currentMaxLoad = Math.max(...ex.sets.map((s) => s.weight), 0);
-      const prevMaxLoad = prevEx ? Math.max(...prevEx.sets.map((s) => s.weight), 0) : 0;
-      const currentVol = ex.sets.reduce((s, set) => s + set.weight * set.reps, 0);
-      const prevVol = prevEx ? prevEx.sets.reduce((s, set) => s + set.weight * set.reps, 0) : 0;
-      return {
-        name: ex.exerciseName,
-        loadDelta: prevEx ? currentMaxLoad - prevMaxLoad : null,
-        volDelta: prevEx ? currentVol - prevVol : null,
-      };
-    });
+    const prCount = exerciseLogs.flatMap((e) => e.sets).filter((s) => s.isPersonalRecord).length;
 
     return (
       <div className="min-h-screen bg-background p-6 flex flex-col items-center max-w-md mx-auto text-center space-y-6 overflow-y-auto">
@@ -429,16 +405,6 @@ export default function EmTreino() {
             <CardContent className="p-4 text-center">
               <p className="text-2xl font-display font-bold">{(totalVolume / 1000).toFixed(1)}k</p>
               <p className="text-xs text-muted-foreground">Volume (kg)</p>
-              {volumeDelta !== null && (
-                <p
-                  className={cn(
-                    'text-xs font-medium mt-1',
-                    volumeDelta >= 0 ? 'text-success' : 'text-destructive'
-                  )}
-                >
-                  {volumeDelta >= 0 ? '▲' : '▼'} {Math.abs(volumeDeltaPct!).toFixed(1)}%
-                </p>
-              )}
             </CardContent>
           </Card>
           <Card>
@@ -449,62 +415,11 @@ export default function EmTreino() {
           </Card>
           <Card>
             <CardContent className="p-4 text-center">
-              <p className="text-2xl font-display font-bold text-warning">{prs}</p>
+              <p className="text-2xl font-display font-bold text-warning">{prCount}</p>
               <p className="text-xs text-muted-foreground">PRs</p>
             </CardContent>
           </Card>
         </div>
-
-        {/* Per-exercise comparison */}
-        {previousSession && (
-          <Card className="w-full">
-            <CardContent className="p-4 space-y-3">
-              <p className="text-sm font-semibold text-muted-foreground uppercase tracking-wider">
-                vs. Sessão Anterior
-              </p>
-              {exerciseDeltas.map((ex, i) => (
-                <div key={i} className="flex items-center justify-between text-sm">
-                  <span className="truncate flex-1 text-left">{ex.name}</span>
-                  <div className="flex gap-3 shrink-0">
-                    {ex.loadDelta !== null && (
-                      <span
-                        className={cn(
-                          'tabular-nums font-medium',
-                          ex.loadDelta > 0
-                            ? 'text-success'
-                            : ex.loadDelta < 0
-                              ? 'text-destructive'
-                              : 'text-muted-foreground'
-                        )}
-                      >
-                        {ex.loadDelta > 0 ? '+' : ''}
-                        {ex.loadDelta}kg
-                      </span>
-                    )}
-                    {ex.volDelta !== null && (
-                      <span
-                        className={cn(
-                          'tabular-nums text-xs',
-                          ex.volDelta > 0
-                            ? 'text-success'
-                            : ex.volDelta < 0
-                              ? 'text-destructive'
-                              : 'text-muted-foreground'
-                        )}
-                      >
-                        {ex.volDelta > 0 ? '+' : ''}
-                        {ex.volDelta}vol
-                      </span>
-                    )}
-                    {ex.loadDelta === null && (
-                      <span className="text-xs text-muted-foreground">novo</span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </CardContent>
-          </Card>
-        )}
 
         <Button className="w-full touch-target" onClick={() => navigate('/')}>
           Voltar ao Dashboard
@@ -612,7 +527,6 @@ export default function EmTreino() {
             </div>
           </div>
 
-          {/* Mini-set dots */}
           <div className="flex gap-2">
             {Array.from({ length: 6 }).map((_, i) => (
               <div
@@ -636,7 +550,6 @@ export default function EmTreino() {
       {/* Main Exercise View */}
       {!isResting && !isMuscleRoundRest && (
         <div className="flex-1 flex flex-col p-4 space-y-4">
-          {/* Exercise info with slide animation */}
           <AnimatePresence mode="wait">
             <motion.div
               key={currentExIndex}
@@ -845,6 +758,7 @@ export default function EmTreino() {
               <Button
                 className="w-full touch-target text-lg font-semibold h-14 glow-primary"
                 onClick={logSet}
+                disabled={saving}
               >
                 <Check className="h-5 w-5 mr-2" />
                 {isMuscleRounds ? `Mini-série ${muscleRoundSet + 1}/6` : 'Registrar Série'}

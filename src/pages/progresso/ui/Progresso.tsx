@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { TrendingUp, Trophy, Flame, BarChart3, User } from 'lucide-react';
+import { TrendingUp, Trophy, Flame, BarChart3, User, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/ui/card';
 import { Button } from '@/shared/ui/ui/button';
 import { useNavigate } from 'react-router-dom';
@@ -15,26 +15,67 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from 'recharts';
-import { getPRs, getSessions, getStreak } from '@/shared/lib/storage';
-import { MOCK_VOLUME_DATA, MOCK_1RM_DATA } from '@/entities/workout/api/mock-data';
+import {
+  sessionService,
+  recordService,
+  mapRecordToPR,
+  calculateStreak,
+} from '@/entities/workout/api';
 import type { PersonalRecord } from '@/entities/workout/model/workout';
+import type { SessionResponse } from '@/entities/workout/api/sessionService';
+
+interface VolumePoint {
+  date: string;
+  volume: number;
+}
+
+interface OneRMPoint {
+  date: string;
+  [exerciseName: string]: number | string;
+}
 
 export default function Progresso() {
   const navigate = useNavigate();
   const [prs, setPrs] = useState<PersonalRecord[]>([]);
   const [streak, setStreak] = useState(0);
   const [weeklyFrequency, setWeeklyFrequency] = useState(0);
+  const [volumeData, setVolumeData] = useState<VolumePoint[]>([]);
+  const [oneRMData, setOneRMData] = useState<OneRMPoint[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setPrs(getPRs());
-    setStreak(getStreak());
-    const sessions = getSessions();
-    const now = new Date();
-    const weekAgo = new Date(now);
-    weekAgo.setDate(weekAgo.getDate() - 7);
-    setWeeklyFrequency(sessions.filter((s) => new Date(s.date) >= weekAgo && s.completed).length);
+    Promise.all([sessionService.list(0, 90), recordService.list()])
+      .then(([sessions, records]) => {
+        // Records
+        setPrs(records.map(mapRecordToPR));
+
+        // Streak e frequência semanal
+        const completed = sessions.filter((s) => s.status === 'COMPLETED');
+        const completedDates = completed.map((s) => s.startedAt?.split('T')[0] ?? '');
+        setStreak(calculateStreak(completedDates));
+
+        const now = new Date();
+        const weekAgo = new Date(now);
+        weekAgo.setDate(weekAgo.getDate() - 7);
+        setWeeklyFrequency(
+          completed.filter((s) => new Date(s.startedAt || '') >= weekAgo).length
+        );
+
+        // Volume data (últimos 14 dias com sessões)
+        setVolumeData(buildVolumeData(completed));
+
+        // 1RM data a partir dos records
+        setOneRMData(build1RMData(records));
+      })
+      .catch(() => {
+        setPrs([]);
+        setVolumeData([]);
+        setOneRMData([]);
+      })
+      .finally(() => setLoading(false));
   }, []);
 
+  // Volume semanal fixo por músculo (placeholder até termos métricas por exercício na API)
   const muscleVolume: { muscle: string; volume: number }[] = [
     { muscle: 'Peito', volume: 18 },
     { muscle: 'Costas', volume: 20 },
@@ -45,6 +86,14 @@ export default function Progresso() {
     { muscle: 'Posteriores', volume: 10 },
     { muscle: 'Panturrilhas', volume: 4 },
   ];
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center min-h-[60vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-6 pb-24">
@@ -101,45 +150,38 @@ export default function Progresso() {
               <CardTitle className="text-sm">1RM Estimado (kg)</CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={250}>
-                <LineChart data={MOCK_1RM_DATA}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="date" fontSize={11} stroke="hsl(var(--muted-foreground))" />
-                  <YAxis fontSize={11} stroke="hsl(var(--muted-foreground))" />
-                  <Tooltip
-                    contentStyle={{
-                      background: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                    }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="supino"
-                    stroke="hsl(199, 89%, 48%)"
-                    strokeWidth={2}
-                    dot={{ r: 3 }}
-                    name="Supino"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="agachamento"
-                    stroke="hsl(168, 84%, 40%)"
-                    strokeWidth={2}
-                    dot={{ r: 3 }}
-                    name="Agachamento"
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="terra"
-                    stroke="hsl(38, 92%, 50%)"
-                    strokeWidth={2}
-                    dot={{ r: 3 }}
-                    name="Terra"
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              {oneRMData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={250}>
+                  <LineChart data={oneRMData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="date" fontSize={11} stroke="hsl(var(--muted-foreground))" />
+                    <YAxis fontSize={11} stroke="hsl(var(--muted-foreground))" />
+                    <Tooltip
+                      contentStyle={{
+                        background: 'hsl(var(--card))',
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                      }}
+                    />
+                    {getExerciseNames(oneRMData).map((name, i) => (
+                      <Line
+                        key={name}
+                        type="monotone"
+                        dataKey={name}
+                        stroke={LINE_COLORS[i % LINE_COLORS.length]}
+                        strokeWidth={2}
+                        dot={{ r: 3 }}
+                        name={name}
+                      />
+                    ))}
+                  </LineChart>
+                </ResponsiveContainer>
+              ) : (
+                <p className="text-center text-muted-foreground py-12 text-sm">
+                  Nenhum record registrado ainda.
+                </p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -150,27 +192,33 @@ export default function Progresso() {
               <CardTitle className="text-sm">Volume por Sessão (kg)</CardTitle>
             </CardHeader>
             <CardContent>
-              <ResponsiveContainer width="100%" height={250}>
-                <BarChart data={MOCK_VOLUME_DATA}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis dataKey="date" fontSize={11} stroke="hsl(var(--muted-foreground))" />
-                  <YAxis fontSize={11} stroke="hsl(var(--muted-foreground))" />
-                  <Tooltip
-                    contentStyle={{
-                      background: 'hsl(var(--card))',
-                      border: '1px solid hsl(var(--border))',
-                      borderRadius: '8px',
-                      fontSize: '12px',
-                    }}
-                  />
-                  <Bar
-                    dataKey="volume"
-                    fill="hsl(199, 89%, 48%)"
-                    radius={[4, 4, 0, 0]}
-                    name="Volume"
-                  />
-                </BarChart>
-              </ResponsiveContainer>
+              {volumeData.length > 0 ? (
+                <ResponsiveContainer width="100%" height={250}>
+                  <BarChart data={volumeData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="date" fontSize={11} stroke="hsl(var(--muted-foreground))" />
+                    <YAxis fontSize={11} stroke="hsl(var(--muted-foreground))" />
+                    <Tooltip
+                      contentStyle={{
+                        background: 'hsl(var(--card))',
+                        border: '1px solid hsl(var(--border))',
+                        borderRadius: '8px',
+                        fontSize: '12px',
+                      }}
+                    />
+                    <Bar
+                      dataKey="volume"
+                      fill="hsl(199, 89%, 48%)"
+                      radius={[4, 4, 0, 0]}
+                      name="Volume"
+                    />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <p className="text-center text-muted-foreground py-12 text-sm">
+                  Nenhuma sessão registrada ainda.
+                </p>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
@@ -221,25 +269,86 @@ export default function Progresso() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {prs.map((pr) => (
-            <div
-              key={pr.exerciseId}
-              className="flex items-center justify-between py-1.5 border-b border-border last:border-0"
-            >
-              <div>
-                <p className="text-sm font-medium">{pr.exerciseName}</p>
-                <p className="text-xs text-muted-foreground">{pr.date}</p>
+          {prs.length === 0 ? (
+            <p className="text-center text-muted-foreground py-4 text-sm">
+              Nenhum record registrado ainda.
+            </p>
+          ) : (
+            prs.map((pr) => (
+              <div
+                key={pr.exerciseId}
+                className="flex items-center justify-between py-1.5 border-b border-border last:border-0"
+              >
+                <div>
+                  <p className="text-sm font-medium">{pr.exerciseName}</p>
+                  <p className="text-xs text-muted-foreground">{pr.date}</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-sm font-bold text-primary">
+                    {pr.weight}kg × {pr.reps}
+                  </p>
+                  <p className="text-xs text-muted-foreground">1RM: {pr.estimated1RM}kg</p>
+                </div>
               </div>
-              <div className="text-right">
-                <p className="text-sm font-bold text-primary">
-                  {pr.weight}kg × {pr.reps}
-                </p>
-                <p className="text-xs text-muted-foreground">1RM: {pr.estimated1RM}kg</p>
-              </div>
-            </div>
-          ))}
+            ))
+          )}
         </CardContent>
       </Card>
     </div>
   );
+}
+
+// ────────────────────── Helpers ──────────────────────
+
+const LINE_COLORS = [
+  'hsl(199, 89%, 48%)',
+  'hsl(168, 84%, 40%)',
+  'hsl(38, 92%, 50%)',
+  'hsl(271, 70%, 50%)',
+  'hsl(348, 83%, 47%)',
+];
+
+function buildVolumeData(sessions: SessionResponse[]): VolumePoint[] {
+  const last14 = new Date();
+  last14.setDate(last14.getDate() - 14);
+
+  return sessions
+    .filter((s) => s.status === 'COMPLETED' && new Date(s.startedAt || '') >= last14)
+    .map((s) => ({
+      date: formatDateShort(s.startedAt || ''),
+      volume: s.totalVolumeKg || 0,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function formatDateShort(iso: string): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function build1RMData(
+  records: Array<{ exerciseName?: string; value: number; achievedAt: string; prType: string }>
+): OneRMPoint[] {
+  const byDate = new Map<string, Record<string, number>>();
+  for (const r of records) {
+    if (r.prType !== 'ONE_RM' || !r.exerciseName) continue;
+    const date = formatDateShort(r.achievedAt);
+    if (!byDate.has(date)) byDate.set(date, {});
+    byDate.get(date)![r.exerciseName] = r.value;
+  }
+
+  return Array.from(byDate.entries())
+    .map(([date, vals]) => ({ date, ...vals }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+function getExerciseNames(data: OneRMPoint[]): string[] {
+  const names = new Set<string>();
+  for (const point of data) {
+    for (const key of Object.keys(point)) {
+      if (key !== 'date') names.add(key);
+    }
+  }
+  return Array.from(names).slice(0, 5); // top 5
 }
