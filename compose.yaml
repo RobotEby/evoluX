@@ -1,0 +1,20 @@
+# Opcional: Vite em dev no container (código montado; node_modules preservado no volume anônimo).
+# Uso: docker compose up --build
+# API no host ou outro container: ajuste VITE_API_URL (ex.: http://host.docker.internal:3001).
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    ports:
+      - '8080:8080'
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://host.docker.internal:3001}
+      VITE_SUPABASE_URL: ${VITE_SUPABASE_URL:-}
+      VITE_SUPABASE_ANON_KEY: ${VITE_SUPABASE_ANON_KEY:-}
+    volumes:
+      - ./:/app
+      - /app/node_modules
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
