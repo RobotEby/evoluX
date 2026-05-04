@@ -1,4 +1,4 @@
-import { apiFetch } from './client';
+import { api } from './client';
 
 export type MeResponse = {
   userId: string;
@@ -10,6 +10,6 @@ export type MeResponse = {
   } | null;
 };
 
-export function fetchMe(accessToken: string) {
-  return apiFetch<MeResponse>('/me', { accessToken });
+export function fetchMe() {
+  return api.get<MeResponse>('/me');
 }
