@@ -40,7 +40,7 @@ export default function Onboarding() {
       onboardingComplete: true,
     });
 
-    navigate('/dashboard', { replace: true });
+    navigate('/', { replace: true });
   };
 
   const canNext = step === 0 || step === 1 || step >= 2;
