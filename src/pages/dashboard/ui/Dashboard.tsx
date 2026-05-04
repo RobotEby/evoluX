@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Flame, Trophy, TrendingUp, Play, Zap, Dumbbell, Loader2 } from 'lucide-react';
+import { Flame, Trophy, TrendingUp, Play, Zap, Dumbbell, User, Apple, Scale, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/ui/card';
 import { Button } from '@/shared/ui/ui/button';
 import { ThemeToggle } from '@/features/theme-toggle/ui/ThemeToggle';
@@ -27,6 +27,9 @@ export default function Dashboard() {
   const [prs, setPrs] = useState<PersonalRecord[]>([]);
   const [streak, setStreak] = useState(0);
   const [weeklyVolume, setWeeklyVolume] = useState(0);
+  const [todayCalories] = useState(0);
+  const [calorieGoal] = useState(2200);
+  const [currentWeight] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -41,13 +44,11 @@ export default function Dashboard() {
         setPlans(plansData);
         setPrs(prsData);
 
-        // Streak a partir das datas das sessões concluídas
         const completedDates = sessions
           .filter((s) => s.status === 'COMPLETED')
           .map((s) => s.startedAt?.split('T')[0] ?? '');
         setStreak(calculateStreak(completedDates));
 
-        // Volume semanal
         const now = new Date();
         const weekAgo = new Date(now);
         weekAgo.setDate(weekAgo.getDate() - 7);
@@ -84,14 +85,24 @@ export default function Dashboard() {
           <div className="flex items-center gap-2 mb-1">
             <Zap className="h-5 w-5 text-primary md:hidden" />
             <span className="text-sm text-muted-foreground md:hidden font-display font-bold tracking-tight">
-              evoluX
+              EVOLUX
             </span>
           </div>
           <h1 className="text-2xl font-display font-bold">Olá, {user.name}! 💪</h1>
           <p className="text-muted-foreground text-sm">Pronto para evoluir hoje?</p>
         </div>
-        <div className="md:hidden">
-          <ThemeToggle />
+        <div className="flex items-center gap-2">
+          <div className="md:hidden">
+            <ThemeToggle />
+          </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="rounded-full"
+            onClick={() => navigate('/perfil')}
+          >
+            <User className="h-5 w-5" />
+          </Button>
         </div>
       </div>
 
@@ -133,7 +144,46 @@ export default function Dashboard() {
         </Card>
       )}
 
-      <div className="grid grid-cols-2 gap-3">
+      <Card
+        className="cursor-pointer hover:border-primary/30 transition-colors"
+        onClick={() => navigate('/calorias')}
+      >
+        <CardContent className="p-4 flex items-center gap-4">
+          <div className="relative h-14 w-14 flex-shrink-0">
+            <svg width="56" height="56" viewBox="0 0 56 56">
+              <circle
+                cx="28"
+                cy="28"
+                r="22"
+                fill="none"
+                stroke="hsl(var(--muted))"
+                strokeWidth="4"
+              />
+              <circle
+                cx="28"
+                cy="28"
+                r="22"
+                fill="none"
+                stroke="hsl(var(--primary))"
+                strokeWidth="4"
+                strokeLinecap="round"
+                strokeDasharray={2 * Math.PI * 22}
+                strokeDashoffset={2 * Math.PI * 22 * (1 - Math.min(todayCalories / calorieGoal, 1))}
+                transform="rotate(-90 28 28)"
+              />
+            </svg>
+            <Apple className="h-4 w-4 text-primary absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
+          </div>
+          <div>
+            <p className="text-lg font-display font-bold">
+              {todayCalories} / {calorieGoal} kcal
+            </p>
+            <p className="text-xs text-muted-foreground">Calorias de hoje</p>
+          </div>
+        </CardContent>
+      </Card>
+
+      <div className="grid grid-cols-3 gap-3">
         <Card
           className="cursor-pointer hover:border-primary/30 transition-colors"
           onClick={() => navigate('/progresso')}
@@ -141,7 +191,7 @@ export default function Dashboard() {
           <CardContent className="p-4">
             <TrendingUp className="h-5 w-5 text-accent mb-2" />
             <p className="text-xl font-display font-bold">{(weeklyVolume / 1000).toFixed(1)}k</p>
-            <p className="text-xs text-muted-foreground">Volume semanal (kg)</p>
+            <p className="text-xs text-muted-foreground">Volume (kg)</p>
           </CardContent>
         </Card>
         <Card
@@ -151,7 +201,17 @@ export default function Dashboard() {
           <CardContent className="p-4">
             <Trophy className="h-5 w-5 text-warning mb-2" />
             <p className="text-xl font-display font-bold">{prs.length}</p>
-            <p className="text-xs text-muted-foreground">Records pessoais</p>
+            <p className="text-xs text-muted-foreground">Records</p>
+          </CardContent>
+        </Card>
+        <Card
+          className="cursor-pointer hover:border-primary/30 transition-colors"
+          onClick={() => navigate('/corpo')}
+        >
+          <CardContent className="p-4">
+            <Scale className="h-5 w-5 text-primary mb-2" />
+            <p className="text-xl font-display font-bold">{currentWeight ?? '--'}</p>
+            <p className="text-xs text-muted-foreground">Peso (kg)</p>
           </CardContent>
         </Card>
       </div>

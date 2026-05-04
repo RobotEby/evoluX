@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
-import { TrendingUp, Trophy, Flame, BarChart3, User, Loader2 } from 'lucide-react';
+import { TrendingUp, Trophy, Flame, BarChart3, User, Scale, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/shared/ui/ui/card';
 import { Button } from '@/shared/ui/ui/button';
 import { useNavigate } from 'react-router-dom';
+import { checkAndUnlockAchievements } from '@/shared/lib/achievements';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/shared/ui/ui/tabs';
 import {
   LineChart,
@@ -39,6 +40,7 @@ export default function Progresso() {
   const [prs, setPrs] = useState<PersonalRecord[]>([]);
   const [streak, setStreak] = useState(0);
   const [weeklyFrequency, setWeeklyFrequency] = useState(0);
+  const [unlockedCount, setUnlockedCount] = useState(0);
   const [volumeData, setVolumeData] = useState<VolumePoint[]>([]);
   const [oneRMData, setOneRMData] = useState<OneRMPoint[]>([]);
   const [loading, setLoading] = useState(true);
@@ -46,10 +48,8 @@ export default function Progresso() {
   useEffect(() => {
     Promise.all([sessionService.list(0, 90), recordService.list()])
       .then(([sessions, records]) => {
-        // Records
         setPrs(records.map(mapRecordToPR));
 
-        // Streak e frequência semanal
         const completed = sessions.filter((s) => s.status === 'COMPLETED');
         const completedDates = completed.map((s) => s.startedAt?.split('T')[0] ?? '');
         setStreak(calculateStreak(completedDates));
@@ -61,11 +61,9 @@ export default function Progresso() {
           completed.filter((s) => new Date(s.startedAt || '') >= weekAgo).length
         );
 
-        // Volume data (últimos 14 dias com sessões)
         setVolumeData(buildVolumeData(completed));
-
-        // 1RM data a partir dos records
         setOneRMData(build1RMData(records));
+        setUnlockedCount(checkAndUnlockAchievements().filter((a) => a.unlockedAt).length);
       })
       .catch(() => {
         setPrs([]);
@@ -75,7 +73,6 @@ export default function Progresso() {
       .finally(() => setLoading(false));
   }, []);
 
-  // Volume semanal fixo por músculo (placeholder até termos métricas por exercício na API)
   const muscleVolume: { muscle: string; volume: number }[] = [
     { muscle: 'Peito', volume: 18 },
     { muscle: 'Costas', volume: 20 },
@@ -102,9 +99,22 @@ export default function Progresso() {
           <TrendingUp className="h-6 w-6 text-primary" />
           Progresso
         </h1>
-        <Button variant="outline" size="sm" onClick={() => navigate('/perfil')} className="gap-1">
-          <User className="h-4 w-4" /> Perfil
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => navigate('/corpo')} className="gap-1">
+            <Scale className="h-4 w-4" /> Corpo
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate('/conquistas')}
+            className="gap-1"
+          >
+            <Trophy className="h-4 w-4" /> {unlockedCount} 🏆
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => navigate('/perfil')} className="gap-1">
+            <User className="h-4 w-4" /> Perfil
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-3 gap-3">
@@ -133,15 +143,9 @@ export default function Progresso() {
 
       <Tabs defaultValue="1rm" className="w-full">
         <TabsList className="w-full">
-          <TabsTrigger value="1rm" className="flex-1">
-            1RM Estimado
-          </TabsTrigger>
-          <TabsTrigger value="volume" className="flex-1">
-            Volume
-          </TabsTrigger>
-          <TabsTrigger value="muscles" className="flex-1">
-            Músculos
-          </TabsTrigger>
+          <TabsTrigger value="1rm" className="flex-1">1RM Estimado</TabsTrigger>
+          <TabsTrigger value="volume" className="flex-1">Volume</TabsTrigger>
+          <TabsTrigger value="muscles" className="flex-1">Músculos</TabsTrigger>
         </TabsList>
 
         <TabsContent value="1rm">
@@ -298,8 +302,6 @@ export default function Progresso() {
   );
 }
 
-// ────────────────────── Helpers ──────────────────────
-
 const LINE_COLORS = [
   'hsl(199, 89%, 48%)',
   'hsl(168, 84%, 40%)',
@@ -311,7 +313,6 @@ const LINE_COLORS = [
 function buildVolumeData(sessions: SessionResponse[]): VolumePoint[] {
   const last14 = new Date();
   last14.setDate(last14.getDate() - 14);
-
   return sessions
     .filter((s) => s.status === 'COMPLETED' && new Date(s.startedAt || '') >= last14)
     .map((s) => ({
@@ -337,7 +338,6 @@ function build1RMData(
     if (!byDate.has(date)) byDate.set(date, {});
     byDate.get(date)![r.exerciseName] = r.value;
   }
-
   return Array.from(byDate.entries())
     .map(([date, vals]) => ({ date, ...vals }))
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -350,5 +350,5 @@ function getExerciseNames(data: OneRMPoint[]): string[] {
       if (key !== 'date') names.add(key);
     }
   }
-  return Array.from(names).slice(0, 5); // top 5
+  return Array.from(names).slice(0, 5);
 }

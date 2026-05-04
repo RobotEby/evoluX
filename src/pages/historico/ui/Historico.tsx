@@ -60,9 +60,7 @@ export default function Historico() {
                   <Card
                     key={s.id}
                     className="hover:border-primary/30 transition-colors cursor-pointer"
-                    onClick={() =>
-                      setExpanded(expanded === s.id ? null : s.id)
-                    }
+                    onClick={() => setExpanded(expanded === s.id ? null : s.id)}
                   >
                     <CardContent className="p-4">
                       <div className="flex items-center justify-between">
@@ -76,7 +74,10 @@ export default function Historico() {
                           {s.exercises.some((ex) =>
                             ex.sets.some((set) => set.isPersonalRecord)
                           ) && (
-                            <Badge variant="secondary" className="text-[10px] bg-warning/10 text-warning border-warning/20">
+                            <Badge
+                              variant="secondary"
+                              className="text-[10px] bg-warning/10 text-warning border-warning/20"
+                            >
                               PR
                             </Badge>
                           )}

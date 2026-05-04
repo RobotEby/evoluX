@@ -32,7 +32,7 @@ import type {
 } from '@/entities/workout/model/workout';
 import { TECHNIQUE_LABELS } from '@/entities/workout/model/workout';
 
-const MotionButton = motion(Button);
+const MotionButton = motion.create(Button);
 
 const slideVariants = {
   enter: { opacity: 0, x: 60 },
@@ -71,12 +71,10 @@ export default function EmTreino() {
   const [saving, setSaving] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Muscle Rounds state
   const [muscleRoundSet, setMuscleRoundSet] = useState(0);
   const [isMuscleRoundRest, setIsMuscleRoundRest] = useState(false);
   const [muscleRoundClusters, setMuscleRoundClusters] = useState<number[]>([]);
 
-  // Load plan + start session
   useEffect(() => {
     if (!planId || !dayId) {
       navigate('/treino');
@@ -97,7 +95,6 @@ export default function EmTreino() {
           setWeight(d.exercises[0].baseLoad || 0);
           setReps(d.exercises[0].technique === 'muscle-rounds' ? 6 : d.exercises[0].repsMin);
         }
-        // Start session on API
         return sessionService
           .start({ routineId: planId, routineDayId: dayId })
           .then((s) => setSessionId(s.id));
@@ -112,7 +109,6 @@ export default function EmTreino() {
   const progress = totalExercises > 0 ? (currentExIndex / totalExercises) * 100 : 0;
   const isMuscleRounds = currentPE?.technique === 'muscle-rounds';
 
-  // Rest timer (shared for normal rest and muscle round rest)
   useEffect(() => {
     if ((isResting || isMuscleRoundRest) && restTime > 0) {
       timerRef.current = setInterval(() => {
@@ -144,7 +140,6 @@ export default function EmTreino() {
 
   const calculate1RM = (w: number, r: number) => Math.round(w * (1 + r / 30));
 
-  // ══════════ API: send set to backend ══════════
   const sendSetToApi = async (exerciseId: string, repsDone: number, weightKg: number) => {
     if (!sessionId) return;
     try {
@@ -162,7 +157,6 @@ export default function EmTreino() {
     }
   };
 
-  // ══════════ API: create PR ══════════
   const createPRApi = async (exerciseId: string, est1RM: number) => {
     try {
       await recordService.create({
@@ -177,7 +171,6 @@ export default function EmTreino() {
     }
   };
 
-  // ══════════ Muscle Rounds: log one mini-set ══════════
   const logMuscleRoundMiniSet = () => {
     if (!currentPE || !currentEx) return;
     const newClusters = [...muscleRoundClusters, 6];
@@ -189,8 +182,7 @@ export default function EmTreino() {
       setRestTime(10);
       setIsMuscleRoundRest(true);
     } else {
-      // All 6 done — log as single set
-      const totalReps = 36; // 6 × 6
+      const totalReps = 36;
       const setLog: SetLog = {
         setNumber: currentSetIndex + 1,
         reps: totalReps,
@@ -199,7 +191,6 @@ export default function EmTreino() {
         clusters: newClusters,
       };
 
-      // Check PR
       const est1RM = calculate1RM(weight, totalReps);
       if (est1RM > 0) {
         setLog.isPersonalRecord = true;
@@ -240,7 +231,6 @@ export default function EmTreino() {
     }
   };
 
-  // ══════════ Log Set ══════════
   const logSet = () => {
     if (!currentPE || !currentEx) return;
 
@@ -358,14 +348,12 @@ export default function EmTreino() {
   };
 
   const finishWorkout = () => {
-    // Complete session on API
     if (sessionId) {
       sessionService.complete(sessionId).catch(() => {});
     }
     setShowSummary(true);
   };
 
-  // ════════════════ LOADING ════════════════
   if (loading) {
     return (
       <div className="flex justify-center items-center min-h-screen">
@@ -374,7 +362,6 @@ export default function EmTreino() {
     );
   }
 
-  // ════════════════ SUMMARY ════════════════
   if (showSummary) {
     const totalVolume = exerciseLogs.reduce(
       (sum, ex) => sum + ex.sets.reduce((s, set) => s + set.weight * set.reps, 0),
@@ -430,11 +417,11 @@ export default function EmTreino() {
 
   if (!day || !currentPE || !currentEx) return null;
 
-  const formatTime = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
+  const formatTime = (s: number) =>
+    `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
-      {/* PR animation */}
       <AnimatePresence>
         {showPR && (
           <motion.div
@@ -455,7 +442,6 @@ export default function EmTreino() {
         )}
       </AnimatePresence>
 
-      {/* Header */}
       <div className="p-4 border-b border-border">
         <div className="flex items-center justify-between mb-2">
           <Button
@@ -482,7 +468,6 @@ export default function EmTreino() {
         </p>
       </div>
 
-      {/* Rest Timer Overlay (normal rest) */}
       {isResting && !isMuscleRoundRest && (
         <motion.div
           initial={{ opacity: 0 }}
@@ -499,7 +484,6 @@ export default function EmTreino() {
         </motion.div>
       )}
 
-      {/* Muscle Round Rest (inline, smaller) */}
       {isMuscleRoundRest && (
         <motion.div
           initial={{ opacity: 0 }}
@@ -547,7 +531,6 @@ export default function EmTreino() {
         </motion.div>
       )}
 
-      {/* Main Exercise View */}
       {!isResting && !isMuscleRoundRest && (
         <div className="flex-1 flex flex-col p-4 space-y-4">
           <AnimatePresence mode="wait">
@@ -577,7 +560,6 @@ export default function EmTreino() {
             </motion.div>
           </AnimatePresence>
 
-          {/* Muscle Rounds: dot progress + fixed reps */}
           {isMuscleRounds && (
             <Card className="mx-auto w-full max-w-xs">
               <CardContent className="p-4 text-center space-y-3">
@@ -616,7 +598,6 @@ export default function EmTreino() {
             </Card>
           )}
 
-          {/* Weight adjuster */}
           <Card className="mx-auto w-full max-w-xs">
             <CardContent className="p-4 text-center space-y-3">
               <p className="text-xs text-muted-foreground uppercase tracking-wider">Carga (kg)</p>
@@ -656,7 +637,6 @@ export default function EmTreino() {
             </CardContent>
           </Card>
 
-          {/* Reps (hidden for muscle rounds) */}
           {!isMuscleRounds && (
             <Card className="mx-auto w-full max-w-xs">
               <CardContent className="p-4 text-center space-y-3">
@@ -698,7 +678,6 @@ export default function EmTreino() {
             </Card>
           )}
 
-          {/* Clusters for Rest-Pause */}
           {currentPE.technique === 'rest-pause' && clusters.length > 0 && (
             <div className="text-center">
               <p className="text-sm text-muted-foreground">
@@ -707,7 +686,6 @@ export default function EmTreino() {
             </div>
           )}
 
-          {/* Drops for Drop Set */}
           {currentPE.technique === 'drop-set' && drops.length > 0 && (
             <div className="text-center space-y-1">
               {drops.map((d, i) => (
@@ -718,7 +696,6 @@ export default function EmTreino() {
             </div>
           )}
 
-          {/* Action buttons */}
           <div className="flex-1" />
           <div className="space-y-2 pb-4">
             {currentPE.technique === 'rest-pause' && (

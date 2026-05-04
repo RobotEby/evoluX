@@ -1,10 +1,4 @@
-/**
- * Cliente HTTP para comunicação com o back-end Evolux.
- *
- * Gerencia tokens JWT automaticamente e fornece tipagem para as respostas.
- */
-
-const API_BASE = 'http://localhost:8080/api';
+import { getApiBaseUrl } from './env';
 
 interface ApiError {
   status: number;
@@ -13,15 +7,26 @@ interface ApiError {
 }
 
 class ApiClient {
+  private getBaseUrl(): string {
+    const base = getApiBaseUrl();
+    if (!base) throw new Error('VITE_API_URL is not set');
+    return base;
+  }
+
   private getToken(): string | null {
     return localStorage.getItem('accessToken');
   }
 
   private async request<T>(path: string, options: RequestInit = {}): Promise<T> {
-    const token = this.getToken();
+    const base = this.getBaseUrl();
+    const url = path.startsWith('http')
+      ? path
+      : `${base}${path.startsWith('/') ? path : `/${path}`}`;
 
+    const token = this.getToken();
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
+      Accept: 'application/json',
       ...(options.headers as Record<string, string>),
     };
 
@@ -29,25 +34,28 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    const response = await fetch(`${API_BASE}${path}`, {
-      ...options,
-      headers,
-    });
+    const response = await fetch(url, { ...options, headers });
 
     if (response.status === 204) {
       return undefined as T;
     }
 
     if (!response.ok) {
-      const error: ApiError = await response.json().catch(() => ({
-        status: response.status,
-        error: 'Unknown',
-        message: response.statusText,
-      }));
-      throw new Error(error.message || `Erro ${response.status}`);
+      let msg = response.statusText;
+      try {
+        const body = (await response.json()) as ApiError;
+        msg = body?.message || body?.error || msg;
+      } catch {
+        try {
+          msg = await response.text();
+        } catch {
+          /* ignore */
+        }
+      }
+      throw new Error(msg);
     }
 
-    return response.json();
+    return response.json() as Promise<T>;
   }
 
   async get<T>(path: string): Promise<T> {
