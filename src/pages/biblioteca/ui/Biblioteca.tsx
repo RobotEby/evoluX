@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-import { BookOpen, Heart, Search, Filter } from 'lucide-react';
+import { BookOpen, Search, Filter, Loader2 } from 'lucide-react';
 import { Card, CardContent } from '@/shared/ui/ui/card';
-import { Button } from '@/shared/ui/ui/button';
 import { Badge } from '@/shared/ui/ui/badge';
 import { Input } from '@/shared/ui/ui/input';
 import {
@@ -11,47 +10,50 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/shared/ui/ui/select';
-import { getVideos, toggleFavorite } from '@/shared/lib/storage';
-import type { ContentVideo } from '@/entities/workout/model/workout';
-import {
-  TECHNIQUE_LABELS,
-  MUSCLE_GROUP_LABELS,
-  type Technique,
-  type MuscleGroup,
-} from '@/entities/workout/model/workout';
-import { cn } from '@/shared/lib/utils';
+import { exerciseService } from '@/entities/workout/api';
+import { mapExerciseResponseToDomain } from '@/entities/workout/api';
+import type { Exercise } from '@/entities/workout/model/workout';
+import { MUSCLE_GROUP_LABELS, type MuscleGroup } from '@/entities/workout/model/workout';
 
 export default function Biblioteca() {
-  const [videos, setVideos] = useState<ContentVideo[]>([]);
+  const [exercises, setExercises] = useState<Exercise[]>([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
-  const [filterTechnique, setFilterTechnique] = useState<string>('all');
-  const [filterCreator, setFilterCreator] = useState<string>('all');
-  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false);
+  const [filterMuscle, setFilterMuscle] = useState<string>('all');
+  const [filterEquipment, setFilterEquipment] = useState<string>('all');
 
   useEffect(() => {
-    setVideos(getVideos());
+    exerciseService
+      .list()
+      .then((list) => list.map(mapExerciseResponseToDomain))
+      .then(setExercises)
+      .catch(() => setExercises([]))
+      .finally(() => setLoading(false));
   }, []);
 
-  const handleFavorite = (id: string) => {
-    toggleFavorite(id);
-    setVideos(getVideos());
-  };
+  const equipments = [...new Set(exercises.map((e) => e.equipment).filter(Boolean))] as string[];
 
-  const creators = [...new Set(videos.map((v) => v.creator))];
-
-  const filtered = videos.filter((v) => {
-    if (search && !v.title.toLowerCase().includes(search.toLowerCase())) return false;
-    if (filterTechnique !== 'all' && v.technique !== filterTechnique) return false;
-    if (filterCreator !== 'all' && v.creator !== filterCreator) return false;
-    if (showFavoritesOnly && !v.isFavorite) return false;
+  const filtered = exercises.filter((e) => {
+    if (search && !e.name.toLowerCase().includes(search.toLowerCase())) return false;
+    if (filterMuscle !== 'all' && !e.muscleGroups.includes(filterMuscle as MuscleGroup))
+      return false;
+    if (filterEquipment !== 'all' && e.equipment !== filterEquipment) return false;
     return true;
   });
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center min-h-[60vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 md:p-6 max-w-2xl mx-auto space-y-6">
       <h1 className="text-2xl font-display font-bold flex items-center gap-2">
         <BookOpen className="h-6 w-6 text-primary" />
-        Biblioteca
+        Biblioteca de Exercícios
       </h1>
 
       <div className="space-y-3">
@@ -60,81 +62,57 @@ export default function Biblioteca() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Buscar vídeos..."
+            placeholder="Buscar exercícios..."
             className="pl-10"
           />
         </div>
         <div className="flex gap-2 flex-wrap">
-          <Select value={filterTechnique} onValueChange={setFilterTechnique}>
-            <SelectTrigger className="w-[140px] h-8 text-xs">
-              <SelectValue placeholder="Técnica" />
+          <Select value={filterMuscle} onValueChange={setFilterMuscle}>
+            <SelectTrigger className="w-[150px] h-8 text-xs">
+              <SelectValue placeholder="Músculo" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="all">Todas técnicas</SelectItem>
-              {Object.entries(TECHNIQUE_LABELS).map(([k, v]) => (
+              <SelectItem value="all">Todos músculos</SelectItem>
+              {Object.entries(MUSCLE_GROUP_LABELS).map(([k, v]) => (
                 <SelectItem key={k} value={k}>
                   {v}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Select value={filterCreator} onValueChange={setFilterCreator}>
-            <SelectTrigger className="w-[140px] h-8 text-xs">
-              <SelectValue placeholder="Criador" />
+          <Select value={filterEquipment} onValueChange={setFilterEquipment}>
+            <SelectTrigger className="w-[150px] h-8 text-xs">
+              <SelectValue placeholder="Equipamento" />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Todos</SelectItem>
-              {creators.map((c) => (
-                <SelectItem key={c} value={c}>
-                  {c}
+              {equipments.map((eq) => (
+                <SelectItem key={eq} value={eq}>
+                  {eq}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
-          <Button
-            variant={showFavoritesOnly ? 'default' : 'outline'}
-            size="sm"
-            className="h-8 text-xs"
-            onClick={() => setShowFavoritesOnly(!showFavoritesOnly)}
-          >
-            <Heart className={cn('h-3 w-3 mr-1', showFavoritesOnly && 'fill-current')} />
-            Favoritos
-          </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {filtered.map((video) => (
+      <div className="space-y-2">
+        {filtered.map((ex) => (
           <Card
-            key={video.id}
-            className="overflow-hidden hover:border-primary/30 transition-colors"
+            key={ex.id}
+            className="hover:border-primary/30 transition-colors"
           >
-            <div className="relative aspect-video bg-muted">
-              <img
-                src={video.thumbnailUrl}
-                alt={video.title}
-                className="w-full h-full object-cover"
-                loading="lazy"
-              />
-              <button
-                onClick={() => handleFavorite(video.id)}
-                className="absolute top-2 right-2 p-1.5 rounded-full bg-black/50 hover:bg-black/70 transition-colors"
-              >
-                <Heart
-                  className={cn(
-                    'h-4 w-4',
-                    video.isFavorite ? 'fill-red-500 text-red-500' : 'text-white'
-                  )}
-                />
-              </button>
-            </div>
-            <CardContent className="p-3 space-y-1.5">
-              <p className="font-medium text-sm line-clamp-2">{video.title}</p>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-muted-foreground">{video.creator}</span>
-                {video.technique && (
-                  <Badge variant="secondary" className="text-[10px]">
-                    {TECHNIQUE_LABELS[video.technique]}
+            <CardContent className="p-4 space-y-1.5">
+              <p className="font-medium">{ex.name}</p>
+              <div className="flex flex-wrap gap-1">
+                {ex.muscleGroups.map((mg) => (
+                  <Badge key={mg} variant="secondary" className="text-[10px]">
+                    {MUSCLE_GROUP_LABELS[mg]}
+                  </Badge>
+                ))}
+                {ex.equipment && (
+                  <Badge variant="outline" className="text-[10px]">
+                    {ex.equipment}
                   </Badge>
                 )}
               </div>
@@ -143,9 +121,9 @@ export default function Biblioteca() {
         ))}
       </div>
 
-      {filtered.length === 0 && (
+      {filtered.length === 0 && !loading && (
         <div className="text-center py-12">
-          <p className="text-muted-foreground">Nenhum vídeo encontrado.</p>
+          <p className="text-muted-foreground">Nenhum exercício encontrado.</p>
         </div>
       )}
     </div>

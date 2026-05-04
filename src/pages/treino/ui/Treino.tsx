@@ -1,18 +1,26 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Play, ChevronRight } from 'lucide-react';
+import { Play, Loader2 } from 'lucide-react';
 import { Card, CardContent } from '@/shared/ui/ui/card';
 import { Button } from '@/shared/ui/ui/button';
 import { Badge } from '@/shared/ui/ui/badge';
-import { getPlans } from '@/shared/lib/storage';
+import { routineService } from '@/entities/workout/api';
+import { mapRoutineToPlan } from '@/entities/workout/api';
 import type { WorkoutPlan } from '@/entities/workout/model/workout';
 import { DIVISION_LABELS } from '@/entities/workout/model/workout';
+
 export default function Treino() {
   const navigate = useNavigate();
   const [plans, setPlans] = useState<WorkoutPlan[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    setPlans(getPlans());
+    routineService
+      .list()
+      .then((routines) => routines.map(mapRoutineToPlan))
+      .then(setPlans)
+      .catch(() => setPlans([]))
+      .finally(() => setLoading(false));
   }, []);
 
   const startWorkout = (planId: string, dayId: string) => {
@@ -24,7 +32,11 @@ export default function Treino() {
       <h1 className="text-2xl font-display font-bold">Iniciar Treino</h1>
       <p className="text-muted-foreground">Selecione o treino do dia:</p>
 
-      {plans.length === 0 ? (
+      {loading ? (
+        <div className="flex justify-center py-12">
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      ) : plans.length === 0 ? (
         <Card className="border-dashed">
           <CardContent className="p-8 text-center space-y-3">
             <p className="text-muted-foreground">Crie uma ficha primeiro.</p>

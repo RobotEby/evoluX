@@ -1,3 +1,20 @@
+/**
+ * ⚠️ @deprecated Dados mockados para desenvolvimento offline.
+ *
+ * Para usar a API real, substitua as importações nas páginas:
+ *
+ * Antes (mock):
+ *   import { MOCK_PLANS } from '@/entities/workout/api/mock-data';
+ *
+ * Depois (API real):
+ *   import { routineService } from '@/entities/workout/api';
+ *   const plans = await routineService.list();
+ *
+ * Services disponíveis no barrel export:
+ *   authService, exerciseService, routineService, sessionService,
+ *   recordService, userService
+ */
+
 import {
   WorkoutPlan,
   WorkoutSession,
