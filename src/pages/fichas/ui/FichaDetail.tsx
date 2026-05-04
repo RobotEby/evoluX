@@ -264,7 +264,6 @@ export default function FichaDetail() {
         <Plus className="h-4 w-4 mr-1" /> Adicionar Dia
       </Button>
 
-      {/* New Day Sheet */}
       <Sheet open={showNewDay} onOpenChange={setShowNewDay}>
         <SheetContent>
           <SheetHeader>
@@ -286,7 +285,6 @@ export default function FichaDetail() {
         </SheetContent>
       </Sheet>
 
-      {/* Add Exercise Sheet */}
       <Sheet open={!!addingToDay} onOpenChange={() => setAddingToDay(null)}>
         <SheetContent className="overflow-y-auto">
           <SheetHeader>

@@ -3,7 +3,7 @@ import { Home, Dumbbell, Play, TrendingUp, BookOpen } from 'lucide-react';
 import { cn } from '@/shared/lib/utils';
 
 const tabs = [
-  { to: '/dashboard', icon: Home, label: 'Home' },
+  { to: '/', icon: Home, label: 'Home' },
   { to: '/fichas', icon: Dumbbell, label: 'Fichas' },
   { to: '/treino', icon: Play, label: 'Treino' },
   { to: '/progresso', icon: TrendingUp, label: 'Progresso' },

@@ -4,21 +4,24 @@ import {
   WorkoutSession,
   PersonalRecord,
   ContentVideo,
-} from '../../entities/workout/model/workout';
+} from '@/entities/workout/model/workout';
 import {
   MOCK_USER,
   MOCK_PLANS,
   MOCK_SESSIONS,
   MOCK_PRS,
   MOCK_VIDEOS,
-} from '../../entities/workout/api/mock-data';
+} from '@/entities/workout/api/mock-data';
+import type { FoodLog, NutritionGoals } from '@/entities/workout/api/nutrition';
+import type { BodyWeightLog, BodyMeasurement, ProgressPhoto } from '@/entities/workout/api/body';
 
+/** Persistência local. Sincronização com o servidor: `@/shared/api` + `@/shared/lib/supabase` (substituição gradual). */
 const KEYS = {
-  user: 'evolux_user',
-  plans: 'evolux_plans',
-  sessions: 'evolux_sessions',
-  prs: 'evolux_prs',
-  favorites: 'evolux_favorites',
+  user: 'progressao_user',
+  plans: 'progressao_plans',
+  sessions: 'progressao_sessions',
+  prs: 'progressao_prs',
+  favorites: 'progressao_favorites',
 } as const;
 
 function get<T>(key: string, fallback: T): T {
@@ -34,11 +37,9 @@ function set(key: string, value: unknown) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
-// User
 export const getUser = () => get<UserPreferences>(KEYS.user, MOCK_USER);
 export const saveUser = (u: UserPreferences) => set(KEYS.user, u);
 
-// Plans
 export const getPlans = () => get<WorkoutPlan[]>(KEYS.plans, MOCK_PLANS);
 export const savePlans = (p: WorkoutPlan[]) => set(KEYS.plans, p);
 export const addPlan = (p: WorkoutPlan) => {
@@ -52,7 +53,6 @@ export const updatePlan = (p: WorkoutPlan) => {
 };
 export const deletePlan = (id: string) => savePlans(getPlans().filter((x) => x.id !== id));
 
-// Sessions
 export const getSessions = () => get<WorkoutSession[]>(KEYS.sessions, MOCK_SESSIONS);
 export const saveSessions = (s: WorkoutSession[]) => set(KEYS.sessions, s);
 export const addSession = (s: WorkoutSession) => {
@@ -61,7 +61,6 @@ export const addSession = (s: WorkoutSession) => {
   saveSessions(all);
 };
 
-// PRs
 export const getPRs = () => get<PersonalRecord[]>(KEYS.prs, MOCK_PRS);
 export const savePRs = (p: PersonalRecord[]) => set(KEYS.prs, p);
 export const addPR = (pr: PersonalRecord) => {
@@ -73,7 +72,6 @@ export const addPR = (pr: PersonalRecord) => {
   return pr;
 };
 
-// Favorites
 export const getFavorites = () => get<string[]>(KEYS.favorites, []);
 export const toggleFavorite = (videoId: string) => {
   const favs = getFavorites();
@@ -82,13 +80,67 @@ export const toggleFavorite = (videoId: string) => {
   return next;
 };
 
-// Videos (from mock, with favorites merged)
 export const getVideos = (): ContentVideo[] => {
   const favs = getFavorites();
   return MOCK_VIDEOS.map((v) => ({ ...v, isFavorite: favs.includes(v.id) }));
 };
 
-// Calculate streak
+const NUTRITION_LOGS_KEY = 'progressao_food_logs';
+const NUTRITION_GOALS_KEY = 'progressao_nutrition_goals';
+
+const DEFAULT_GOALS: NutritionGoals = { calories: 2200, protein: 150, carbs: 250, fat: 70 };
+
+export const getNutritionGoals = (): NutritionGoals =>
+  get<NutritionGoals>(NUTRITION_GOALS_KEY, DEFAULT_GOALS);
+export const saveNutritionGoals = (g: NutritionGoals) => set(NUTRITION_GOALS_KEY, g);
+
+export const getAllFoodLogs = (): FoodLog[] => get<FoodLog[]>(NUTRITION_LOGS_KEY, []);
+export const getFoodLogs = (date: string): FoodLog[] =>
+  getAllFoodLogs().filter((l) => l.date === date);
+export const addFoodLog = (log: FoodLog) => {
+  const all = getAllFoodLogs();
+  all.push(log);
+  set(NUTRITION_LOGS_KEY, all);
+};
+export const deleteFoodLog = (id: string) => {
+  set(
+    NUTRITION_LOGS_KEY,
+    getAllFoodLogs().filter((l) => l.id !== id)
+  );
+};
+
+const BODY_WEIGHT_KEY = 'progressao_body_weight';
+const BODY_MEASUREMENTS_KEY = 'progressao_body_measurements';
+const PROGRESS_PHOTOS_KEY = 'progressao_progress_photos';
+
+export const getBodyWeightLogs = (): BodyWeightLog[] => get<BodyWeightLog[]>(BODY_WEIGHT_KEY, []);
+export const addBodyWeightLog = (log: BodyWeightLog) => {
+  const all = getBodyWeightLogs();
+  all.push(log);
+  set(BODY_WEIGHT_KEY, all);
+};
+
+export const getBodyMeasurements = (): BodyMeasurement[] =>
+  get<BodyMeasurement[]>(BODY_MEASUREMENTS_KEY, []);
+export const addBodyMeasurement = (m: BodyMeasurement) => {
+  const all = getBodyMeasurements();
+  all.push(m);
+  set(BODY_MEASUREMENTS_KEY, all);
+};
+
+export const getProgressPhotos = (): ProgressPhoto[] =>
+  get<ProgressPhoto[]>(PROGRESS_PHOTOS_KEY, []);
+export const addProgressPhoto = (p: ProgressPhoto) => {
+  const all = getProgressPhotos();
+  all.push(p);
+  set(PROGRESS_PHOTOS_KEY, all);
+};
+export const deleteProgressPhoto = (id: string) =>
+  set(
+    PROGRESS_PHOTOS_KEY,
+    getProgressPhotos().filter((p) => p.id !== id)
+  );
+
 export const getStreak = (): number => {
   const sessions = getSessions()
     .filter((s) => s.completed)

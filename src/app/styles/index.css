@@ -97,13 +97,20 @@
 }
 
 @layer base {
+  /* Evita avisos no Firefox com `-moz-osx-font-smoothing` do utilitário `antialiased`. */
+  html {
+    text-size-adjust: 100%;
+    -webkit-text-size-adjust: 100%;
+  }
+
   * {
     @apply border-border;
   }
 
   body {
-    @apply bg-background text-foreground font-sans antialiased;
+    @apply bg-background text-foreground font-sans;
     font-family: 'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
   }
 
   h1,
